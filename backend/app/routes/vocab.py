@@ -8,7 +8,7 @@ from typing import List
 
 from app.db.session import get_db
 from app.db.models import VocabList, Word, SRSCard, list_words
-from app.db.schemas import VocabListCreate, VocabListResponse, WordCreate, WordResponse
+from app.db.schemas import VocabListCreate, VocabListResponse, WordCreate, WordResponse, ExerciseResponse
 from app.auth.security import get_current_user, User
 
 router = APIRouter(prefix="/vocab", tags=["vocab"])
@@ -314,3 +314,71 @@ def upload_csv_vocab(
             
     db.commit()
     return {"message": f"Successfully parsed CSV and imported {added_count} words"}
+
+@router.post("/words/{word_id}/exercises", response_model=List[ExerciseResponse])
+def generate_word_exercises(
+    word_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generates a set of 1 Reception (mcq) and 1 Production (fill_blank) exercises for the word.
+    Saves them to the database and returns them.
+    """
+    word = db.query(Word).filter(Word.id == word_id).first()
+    if not word:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Word not found"
+        )
+        
+    from app.services.ai import generate_exercise_for_word
+    from app.db.models import Exercise
+    
+    # Generate MCQ (Reception)
+    try:
+        mcq_data = generate_exercise_for_word(word.spelling, word.translation, "mcq")
+        mcq_ex = Exercise(word_id=word.id, type="mcq", data=mcq_data)
+        db.add(mcq_ex)
+    except Exception as e:
+        print(f"Failed to generate MCQ: {e}")
+        
+    # Generate Fill Blank (Production)
+    try:
+        fb_data = generate_exercise_for_word(word.spelling, word.translation, "fill_blank")
+        fb_ex = Exercise(word_id=word.id, type="fill_blank", data=fb_data)
+        db.add(fb_ex)
+    except Exception as e:
+        print(f"Failed to generate Fill Blank: {e}")
+        
+    db.commit()
+    
+    # Return all exercises for the word
+    return db.query(Exercise).filter(Exercise.word_id == word.id).all()
+
+@router.get("/words/{word_id}/exercises", response_model=List[ExerciseResponse])
+def get_word_exercises(
+    word_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves existing exercises for the word.
+    If none exist, automatically triggers generation and returns them.
+    """
+    word = db.query(Word).filter(Word.id == word_id).first()
+    if not word:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Word not found"
+        )
+        
+    from app.db.models import Exercise
+    exercises = db.query(Exercise).filter(Exercise.word_id == word.id).all()
+    
+    if not exercises:
+        # Generate automatically on-demand
+        return generate_word_exercises(word_id, current_user, db)
+        
+    return exercises
+

@@ -4,8 +4,9 @@ import React, { useState, useEffect } from "react";
 import { 
   BookOpen, Plus, Trash2, Upload, LogOut, Search, 
   FileSpreadsheet, ArrowLeft, Loader2, Key, Mail, 
-  AlertCircle, CheckCircle, Globe
+  AlertCircle, CheckCircle, Globe, Sparkles
 } from "lucide-react";
+import AiExplainPanel from "../components/AiExplainPanel";
 
 // API Base URL config
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -55,6 +56,7 @@ export default function Home() {
   const [csvError, setCsvError] = useState("");
   const [csvSuccess, setCsvSuccess] = useState("");
   const [csvLoading, setCsvLoading] = useState(false);
+  const [activeExplainWord, setActiveExplainWord] = useState<{ id: string; spelling: string; translation: string } | null>(null);
 
   // Load token from localStorage on mount
   useEffect(() => {
@@ -171,6 +173,7 @@ export default function Home() {
     setPassword("");
     setAuthSuccess("");
     setAuthError("");
+    setActiveExplainWord(null);
   };
 
   // Create List
@@ -500,7 +503,7 @@ export default function Home() {
                     lists.map((l) => (
                       <div
                         key={l.id}
-                        onClick={() => setSelectedList(l)}
+                        onClick={() => { setSelectedList(l); setActiveExplainWord(null); }}
                         className={`flex justify-between items-center p-3 rounded-xl border text-left cursor-pointer transition ${
                           selectedList?.id === l.id
                             ? "bg-indigo-950/40 border-indigo-500/80"
@@ -530,9 +533,10 @@ export default function Home() {
             </div>
 
             {/* DETAILS & ACTIONS PANEL */}
-            <div className="lg:col-span-8">
+            <div className="lg:col-span-8 grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
               {selectedList ? (
-                <div className="bg-slate-900/30 backdrop-blur-md border border-slate-800 rounded-2xl p-6 space-y-6">
+                <>
+                  <div className={`${activeExplainWord ? "xl:col-span-7" : "xl:col-span-12"} space-y-6 bg-slate-900/30 backdrop-blur-md border border-slate-800 rounded-2xl p-6 transition-all duration-300`}>
                   {/* List Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
                     <div>
@@ -696,12 +700,21 @@ export default function Home() {
                                   <p className="text-xs text-slate-500 font-mono">Ex: &quot;{w.example_sentence}&quot;</p>
                                 )}
                               </div>
-                              <button
-                                onClick={() => handleDeleteWord(w.id)}
-                                className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-900 transition mt-0.5 shrink-0"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex gap-1 shrink-0 mt-0.5">
+                                <button
+                                  onClick={() => setActiveExplainWord({ id: w.id, spelling: w.spelling, translation: w.translation })}
+                                  className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-slate-900 transition"
+                                  title="AI Insights"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteWord(w.id)}
+                                  className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-900 transition"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -709,8 +722,20 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
+                {activeExplainWord && (
+                    <div className="xl:col-span-5 h-[480px]">
+                      <AiExplainPanel
+                        wordId={activeExplainWord.id}
+                        spelling={activeExplainWord.spelling}
+                        translation={activeExplainWord.translation}
+                        token={token || ""}
+                        onClose={() => setActiveExplainWord(null)}
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="bg-slate-900/10 border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[350px]">
+                <div className="xl:col-span-12 bg-slate-900/10 border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[350px]">
                   <BookOpen className="w-12 h-12 text-slate-650 mb-4 stroke-1" />
                   <h3 className="text-lg font-display font-semibold text-slate-400 mb-2">No List Selected</h3>
                   <p className="text-xs text-slate-500 max-w-sm">

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.routes import auth, vocab
+from app.routes import auth, vocab, ai_explain
 from app.config import settings
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.add_middleware(
 # Include routes
 app.include_router(auth.router)
 app.include_router(vocab.router)
+app.include_router(ai_explain.router)
 
 @app.get("/")
 def health_check():
