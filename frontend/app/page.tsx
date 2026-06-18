@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { 
   BookOpen, Plus, Trash2, Upload, LogOut, Search, 
   FileSpreadsheet, ArrowLeft, Loader2, Key, Mail, 
-  AlertCircle, CheckCircle, Chrome
+  AlertCircle, CheckCircle, Globe
 } from "lucide-react";
 
 // API Base URL config
@@ -431,7 +431,7 @@ export default function Home() {
                 disabled={authLoading}
                 className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-755 border border-slate-700 disabled:opacity-50 text-slate-200 transition cursor-pointer font-medium text-sm"
               >
-                <Chrome className="w-4 h-4 text-indigo-400" />
+                <Globe className="w-4 h-4 text-indigo-400" />
                 Google Fast Sign In (Mock)
               </button>
 
