@@ -106,3 +106,23 @@ class ReviewLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Session Cards
+class SessionCardResponse(BaseModel):
+    card_id: UUID
+    word_id: UUID
+    spelling: str
+    translation: str
+    definition: Optional[str] = None
+    example_sentence: Optional[str] = None
+    repetitions: int
+    interval: int
+    ease_factor: float
+    exercises: List[ExerciseResponse] = []
+
+class ReviewSubmit(BaseModel):
+    card_id: UUID
+    exercise_id: Optional[UUID] = None
+    quality: int = Field(..., ge=1, le=5) # 1 (Again), 3 (Hard), 4 (Good), 5 (Easy)
+    response: Optional[str] = None
+

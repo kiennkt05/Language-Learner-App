@@ -7,6 +7,7 @@ import {
   AlertCircle, CheckCircle, Globe, Sparkles
 } from "lucide-react";
 import AiExplainPanel from "../components/AiExplainPanel";
+import ReviewSession from "../components/ReviewSession";
 
 // API Base URL config
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -57,6 +58,7 @@ export default function Home() {
   const [csvSuccess, setCsvSuccess] = useState("");
   const [csvLoading, setCsvLoading] = useState(false);
   const [activeExplainWord, setActiveExplainWord] = useState<{ id: string; spelling: string; translation: string } | null>(null);
+  const [activeReviewSession, setActiveReviewSession] = useState<{ id: string | null; name: string } | null>(null);
 
   // Load token from localStorage on mount
   useEffect(() => {
@@ -553,8 +555,8 @@ export default function Home() {
 
                     <div className="flex gap-2">
                       <button 
-                        disabled
-                        className="px-4 py-2 bg-indigo-600/50 text-white rounded-xl font-semibold text-sm shadow-lg transition opacity-60 cursor-not-allowed"
+                        onClick={() => setActiveReviewSession({ id: selectedList.id, name: selectedList.name })}
+                        className="px-4 py-2 bg-indigo-650 hover:bg-indigo-600 text-white rounded-xl font-semibold text-sm shadow-lg shadow-indigo-650/20 transition cursor-pointer font-sans"
                       >
                         Start Review Session
                       </button>
@@ -748,6 +750,17 @@ export default function Home() {
           </div>
         )}
       </div>
+      {activeReviewSession && (
+        <ReviewSession
+          listId={activeReviewSession.id}
+          listName={activeReviewSession.name}
+          token={token || ""}
+          onClose={() => setActiveReviewSession(null)}
+          onSessionComplete={() => {
+            if (token) fetchLists(token);
+          }}
+        />
+      )}
     </main>
   );
 }
