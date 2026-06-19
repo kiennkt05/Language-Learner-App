@@ -315,6 +315,46 @@ def upload_csv_vocab(
     db.commit()
     return {"message": f"Successfully parsed CSV and imported {added_count} words"}
 
+@router.post("/words/{word_id}/audio")
+def generate_word_audio(
+    word_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generates and returns the pronunciation audio URL for a word on-demand.
+    Caches the file locally or on Cloudflare R2, and saves the reference URL in the database.
+    """
+    word = db.query(Word).filter(Word.id == word_id).first()
+    if not word:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Word not found"
+        )
+        
+    if word.audio_url:
+        return {"audio_url": word.audio_url}
+        
+    # Find list name for language detection (grab the first associated list)
+    list_name = None
+    if word.vocab_lists:
+        list_name = word.vocab_lists[0].name
+        
+    from app.services.audio import get_word_audio_url
+    try:
+        audio_url = get_word_audio_url(str(word.id), word.spelling, list_name)
+        word.audio_url = audio_url
+        db.commit()
+        db.refresh(word)
+    except Exception as e:
+        print(f"Failed to generate audio for word {word.spelling}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate pronunciation audio"
+        )
+        
+    return {"audio_url": word.audio_url}
+
 @router.post("/words/{word_id}/exercises", response_model=List[ExerciseResponse])
 def generate_word_exercises(
     word_id: UUID,

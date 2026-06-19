@@ -41,6 +41,7 @@ class WordResponse(BaseModel):
     translation: str
     definition: Optional[str]
     example_sentence: Optional[str]
+    audio_url: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -115,6 +116,7 @@ class SessionCardResponse(BaseModel):
     translation: str
     definition: Optional[str] = None
     example_sentence: Optional[str] = None
+    audio_url: Optional[str] = None
     repetitions: int
     interval: int
     ease_factor: float

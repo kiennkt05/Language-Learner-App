@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Award, CheckCircle2, AlertCircle, Loader2, Sparkles, RefreshCw, ArrowRight, BookOpen } from "lucide-react";
+import { X, Award, CheckCircle2, AlertCircle, Loader2, Sparkles, RefreshCw, ArrowRight, BookOpen, Volume2 } from "lucide-react";
 import ExerciseCard from "./ExerciseCard";
 
 interface Exercise {
@@ -51,6 +51,7 @@ export default function ReviewSession({
   const [exerciseSubmitted, setExerciseSubmitted] = useState(false);
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [sessionCompleted, setSessionCompleted] = useState(false);
+  const [playingWordId, setPlayingWordId] = useState<string | null>(null);
 
   // Session Statistics
   const [answersLog, setAnswersLog] = useState<{
@@ -180,6 +181,35 @@ export default function ReviewSession({
         // Session finished
         setSessionCompleted(true);
       }
+    }
+  };
+
+  const playReviewAudio = async (wordId: string, spelling: string) => {
+    setPlayingWordId(wordId);
+    try {
+      const res = await fetch(`${API_URL}/vocab/words/${wordId}/audio`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const audioUrl = data.audio_url;
+        const absoluteUrl = audioUrl.startsWith("http") 
+          ? audioUrl 
+          : `${API_URL}${audioUrl}`;
+          
+        const audio = new Audio(absoluteUrl);
+        audio.play();
+        audio.onended = () => setPlayingWordId(null);
+      } else {
+        setPlayingWordId(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setPlayingWordId(null);
     }
   };
 
@@ -406,14 +436,23 @@ export default function ReviewSession({
         </div>
 
         {/* Card Hint Info */}
-        <div className="mb-6 p-4 rounded-xl bg-slate-900/40 border border-slate-850/60 space-y-1">
-          <span className="text-[9px] font-bold text-indigo-400 tracking-wider uppercase">Active Word Hint</span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold text-slate-200">{currentCard.translation}</span>
-            {currentCard.definition && (
-              <span className="text-xs text-slate-400">— {currentCard.definition}</span>
-            )}
+        <div className="mb-6 p-4 rounded-xl bg-slate-900/40 border border-slate-850/60 flex justify-between items-center">
+          <div className="space-y-1">
+            <span className="text-[9px] font-bold text-indigo-400 tracking-wider uppercase">Active Word Hint</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm font-semibold text-slate-200">{currentCard.translation}</span>
+              {currentCard.definition && (
+                <span className="text-xs text-slate-400">— {currentCard.definition}</span>
+              )}
+            </div>
           </div>
+          <button
+            onClick={() => playReviewAudio(currentCard.word_id, currentCard.spelling)}
+            className="text-slate-450 hover:text-indigo-400 transition p-2 bg-slate-950/60 border border-slate-850 rounded-xl hover:scale-105"
+            title="Listen pronunciation"
+          >
+            <Volume2 className={`w-4 h-4 ${playingWordId === currentCard.word_id ? "animate-bounce text-indigo-400" : ""}`} />
+          </button>
         </div>
 
         {/* Active Exercise Component */}

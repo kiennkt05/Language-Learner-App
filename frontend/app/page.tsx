@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { 
   BookOpen, Plus, Trash2, Upload, LogOut, Search, 
   FileSpreadsheet, ArrowLeft, Loader2, Key, Mail, 
-  AlertCircle, CheckCircle, Globe, Sparkles
+  AlertCircle, CheckCircle, Globe, Sparkles, Volume2
 } from "lucide-react";
 import AiExplainPanel from "../components/AiExplainPanel";
 import ReviewSession from "../components/ReviewSession";
@@ -59,6 +59,9 @@ export default function Home() {
   const [csvLoading, setCsvLoading] = useState(false);
   const [activeExplainWord, setActiveExplainWord] = useState<{ id: string; spelling: string; translation: string } | null>(null);
   const [activeReviewSession, setActiveReviewSession] = useState<{ id: string | null; name: string } | null>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [playingWordId, setPlayingWordId] = useState<string | null>(null);
 
   // Load token from localStorage on mount
   useEffect(() => {
@@ -66,6 +69,7 @@ export default function Home() {
     if (savedToken) {
       setToken(savedToken);
       fetchLists(savedToken);
+      fetchStats(savedToken);
     }
   }, []);
 
@@ -95,6 +99,56 @@ export default function Home() {
       console.error("Failed to fetch lists", err);
     } finally {
       setListLoading(false);
+    }
+  };
+
+  // Fetch overall statistics
+  const fetchStats = async (authToken: string) => {
+    setStatsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/vocab/stats`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch stats", err);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  // On-demand TTS play
+  const playWordAudio = async (wordId: string, spelling: string) => {
+    setPlayingWordId(wordId);
+    try {
+      const res = await fetch(`${API_URL}/vocab/words/${wordId}/audio`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const audioUrl = data.audio_url;
+        const absoluteUrl = audioUrl.startsWith("http") 
+          ? audioUrl 
+          : `${API_URL}${audioUrl}`;
+          
+        const audio = new Audio(absoluteUrl);
+        audio.play();
+        audio.onended = () => setPlayingWordId(null);
+      } else {
+        setPlayingWordId(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setPlayingWordId(null);
     }
   };
 
@@ -131,6 +185,7 @@ export default function Home() {
         localStorage.setItem("vocab_token", data.access_token);
         setToken(data.access_token);
         fetchLists(data.access_token);
+        fetchStats(data.access_token);
       }
     } catch (err: any) {
       setAuthError(err.message || "Something went wrong.");
@@ -158,6 +213,7 @@ export default function Home() {
       localStorage.setItem("vocab_token", data.access_token);
       setToken(data.access_token);
       fetchLists(data.access_token);
+      fetchStats(data.access_token);
     } catch (err: any) {
       setAuthError(err.message);
     } finally {
@@ -171,6 +227,7 @@ export default function Home() {
     setToken(null);
     setLists([]);
     setSelectedList(null);
+    setStats(null);
     setEmail("");
     setPassword("");
     setAuthSuccess("");
@@ -249,6 +306,7 @@ export default function Home() {
         setNewWordDef("");
         setNewWordEx("");
         fetchLists(token);
+        fetchStats(token);
       }
     } catch (err) {
       console.error(err);
@@ -268,6 +326,7 @@ export default function Home() {
       });
       if (res.ok) {
         fetchLists(token);
+        fetchStats(token);
       }
     } catch (err) {
       console.error(err);
@@ -307,6 +366,7 @@ export default function Home() {
       const fileInput = document.getElementById("csv-file-input") as HTMLInputElement;
       if (fileInput) fileInput.value = "";
       fetchLists(token);
+      fetchStats(token);
     } catch (err: any) {
       setCsvError(err.message || "An error occurred parsing the CSV.");
     } finally {
@@ -690,9 +750,16 @@ export default function Home() {
                           {filteredWords.map((w) => (
                             <div key={w.id} className="flex justify-between items-start p-3 hover:bg-slate-900/20 transition">
                               <div className="space-y-1 pr-2">
-                                <div className="flex items-baseline gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <strong className="text-sm text-indigo-400 font-semibold">{w.spelling}</strong>
-                                  <span className="text-xs text-slate-400">—</span>
+                                  <button
+                                    onClick={() => playWordAudio(w.id, w.spelling)}
+                                    className="text-slate-500 hover:text-indigo-400 transition p-1 hover:bg-slate-900/80 rounded"
+                                    title="Play pronunciation"
+                                  >
+                                    <Volume2 className={`w-3.5 h-3.5 ${playingWordId === w.id ? "animate-bounce text-indigo-400" : ""}`} />
+                                  </button>
+                                  <span className="text-xs text-slate-500">—</span>
                                   <span className="text-sm text-slate-200">{w.translation}</span>
                                 </div>
                                 {w.definition && (
@@ -737,12 +804,106 @@ export default function Home() {
                   )}
                 </>
               ) : (
-                <div className="xl:col-span-12 bg-slate-900/10 border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[350px]">
-                  <BookOpen className="w-12 h-12 text-slate-650 mb-4 stroke-1" />
-                  <h3 className="text-lg font-display font-semibold text-slate-400 mb-2">No List Selected</h3>
-                  <p className="text-xs text-slate-500 max-w-sm">
-                    Select a vocabulary list from the sidebar or create a new one to manage your words and start learning.
-                  </p>
+                <div className="xl:col-span-12 space-y-6">
+                  {/* Stats Dashboard Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Streak Card */}
+                    <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden group hover:border-indigo-500/35 transition duration-300">
+                      <div className="absolute top-0 right-0 w-[80px] h-[80px] rounded-full bg-orange-500/5 blur-[30px] pointer-events-none" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 font-display">Review Streak</span>
+                      <div className="flex items-baseline gap-2 mt-2">
+                        <span className="text-2xl font-bold text-orange-400 font-display">🔥 {stats?.streak || 0}</span>
+                        <span className="text-xs text-slate-450">days</span>
+                      </div>
+                      <p className="text-[10px] text-slate-450 mt-2 font-sans">Keep reviewing daily to preserve your streak!</p>
+                    </div>
+
+                    {/* Accuracy Card */}
+                    <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden group hover:border-indigo-500/35 transition duration-300">
+                      <div className="absolute top-0 right-0 w-[80px] h-[80px] rounded-full bg-emerald-500/5 blur-[30px] pointer-events-none" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 font-display">Recall Accuracy</span>
+                      <div className="flex items-baseline gap-2 mt-2">
+                        <span className="text-2xl font-bold text-emerald-400 font-display">🎯 {stats?.accuracy || 0}%</span>
+                      </div>
+                      <p className="text-[10px] text-slate-455 mt-2 font-sans">Target above 85% for optimal retention.</p>
+                    </div>
+
+                    {/* Mastery Card */}
+                    <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden group hover:border-indigo-500/35 transition duration-300 col-span-1 md:col-span-2">
+                      <div className="absolute top-0 right-0 w-[100px] h-[100px] rounded-full bg-indigo-500/5 blur-[40px] pointer-events-none" />
+                      <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 font-display">Vocabulary Mastery</span>
+                      <div className="grid grid-cols-3 gap-2 mt-2">
+                        <div>
+                          <span className="text-[10px] text-slate-550 font-semibold font-display">Mastered</span>
+                          <p className="text-base font-bold text-indigo-400">{stats?.mastery_counts?.mastered || 0}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-550 font-semibold font-display">Learning</span>
+                          <p className="text-base font-bold text-purple-400">{stats?.mastery_counts?.learning || 0}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-550 font-semibold font-display">Unstarted</span>
+                          <p className="text-base font-bold text-slate-400">{stats?.mastery_counts?.unstarted || 0}</p>
+                        </div>
+                      </div>
+                      {/* Segmented Progress Bar */}
+                      <div className="w-full bg-slate-950 border border-slate-850 h-2.5 rounded-full overflow-hidden p-[2px] mt-2.5 flex">
+                        {stats?.mastery_counts?.total > 0 ? (
+                          <>
+                            <div 
+                              className="bg-indigo-500 h-full rounded-l-full transition-all duration-350" 
+                              style={{ width: `${(stats.mastery_counts.mastered / stats.mastery_counts.total) * 100}%` }}
+                              title="Mastered"
+                            />
+                            <div 
+                              className="bg-purple-500 h-full transition-all duration-350" 
+                              style={{ width: `${(stats.mastery_counts.learning / stats.mastery_counts.total) * 100}%` }}
+                              title="Learning"
+                            />
+                            <div 
+                              className="bg-slate-700 h-full rounded-r-full transition-all duration-350" 
+                              style={{ width: `${(stats.mastery_counts.unstarted / stats.mastery_counts.total) * 100}%` }}
+                              title="Unstarted"
+                            />
+                          </>
+                        ) : (
+                          <div className="w-full bg-slate-850 h-full rounded-full" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Forecast Forecast Row */}
+                  <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden group hover:border-indigo-500/35 transition duration-300">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 font-display">Spaced Repetition Forecast</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3">
+                      <div className="p-3 bg-slate-950/60 border border-slate-850 rounded-xl">
+                        <span className="text-[10px] text-slate-400">Due Now</span>
+                        <p className="text-lg font-bold text-slate-200 mt-0.5">{stats?.forecast?.due_now || 0}</p>
+                      </div>
+                      <div className="p-3 bg-slate-950/60 border border-slate-850 rounded-xl">
+                        <span className="text-[10px] text-slate-400">Next 24h</span>
+                        <p className="text-lg font-bold text-slate-200 mt-0.5">{stats?.forecast?.due_today || 0}</p>
+                      </div>
+                      <div className="p-3 bg-slate-950/60 border border-slate-850 rounded-xl">
+                        <span className="text-[10px] text-slate-400">Next 7 Days</span>
+                        <p className="text-lg font-bold text-slate-200 mt-0.5">{stats?.forecast?.due_this_week || 0}</p>
+                      </div>
+                      <div className="p-3 bg-slate-950/60 border border-slate-850 rounded-xl">
+                        <span className="text-[10px] text-slate-400">Next 30 Days</span>
+                        <p className="text-lg font-bold text-slate-200 mt-0.5">{stats?.forecast?.due_this_month || 0}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Selection Callout */}
+                  <div className="bg-slate-900/10 border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[200px]">
+                    <BookOpen className="w-10 h-10 text-slate-650 mb-3 stroke-1 animate-pulse" />
+                    <h3 className="text-sm font-semibold text-slate-400 mb-1 font-display">Select a Vocabulary List</h3>
+                    <p className="text-xs text-slate-500 max-w-sm font-sans">
+                      Select a vocabulary list from the sidebar or create a new one to manage your words and start learning.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

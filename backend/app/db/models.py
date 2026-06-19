@@ -50,6 +50,7 @@ class Word(Base):
     translation = Column(String(255), nullable=False)
     definition = Column(String, nullable=True)
     example_sentence = Column(String, nullable=True)
+    audio_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
