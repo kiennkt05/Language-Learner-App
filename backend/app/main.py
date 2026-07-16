@@ -1,19 +1,19 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from app.routes import auth, vocab, ai_explain, srs, stats
 from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Dynamic check/alter to add audio_url if missing (saves Postgres docker drop container recreations)
+    # Dynamic check/alter to add tier if missing (saves Postgres docker drop container recreations)
     try:
         from app.db.session import engine
         from sqlalchemy import text
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE words ADD COLUMN IF NOT EXISTS audio_url VARCHAR"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS tier VARCHAR(50) DEFAULT 'premium'"))
+            conn.execute(text("ALTER TABLE vocab_lists ADD COLUMN IF NOT EXISTS target_language VARCHAR"))
     except Exception as e:
         print(f"Database column auto-alter check skipped/failed: {e}")
 
@@ -27,10 +27,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
-# Mount local cache folder static/audio as StaticFiles
-os_static_dir = "static"
-os.makedirs(os_static_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=os_static_dir), name="static")
 
 # Set up CORS
 app.add_middleware(
@@ -54,7 +50,6 @@ def health_check():
         "status": "healthy",
         "project": settings.PROJECT_NAME,
         "groq_mocked": settings.is_groq_mocked,
-        "tts_mocked": settings.is_tts_mocked,
         "r2_mocked": settings.is_r2_mocked
     }
 

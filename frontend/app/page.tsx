@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { 
   BookOpen, Plus, Trash2, Upload, LogOut, Search, 
   FileSpreadsheet, ArrowLeft, Loader2, Key, Mail, 
-  AlertCircle, CheckCircle, Globe, Sparkles, Volume2
+  AlertCircle, CheckCircle, Globe, Sparkles, ChevronDown, X
 } from "lucide-react";
 import AiExplainPanel from "../components/AiExplainPanel";
 import ReviewSession from "../components/ReviewSession";
@@ -18,6 +18,11 @@ interface Word {
   translation: string;
   definition: string | null;
   example_sentence: string | null;
+  pronunciation: string | null;
+  part_of_speech: string | null;
+  collocation: string | null;
+  visual_clue: string | null;
+  exercise_level: number | null;
   created_at: string;
 }
 
@@ -25,6 +30,7 @@ interface VocabList {
   id: string;
   name: string;
   description: string | null;
+  target_language: string | null;
   created_at: string;
   words: Word[];
 }
@@ -44,6 +50,7 @@ export default function Home() {
   const [selectedList, setSelectedList] = useState<VocabList | null>(null);
   const [newListName, setNewListName] = useState("");
   const [newListDesc, setNewListDesc] = useState("");
+  const [newListLang, setNewListLang] = useState("");
   const [listLoading, setListLoading] = useState(false);
 
   // Word Management State
@@ -61,7 +68,19 @@ export default function Home() {
   const [activeReviewSession, setActiveReviewSession] = useState<{ id: string | null; name: string } | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(false);
-  const [playingWordId, setPlayingWordId] = useState<string | null>(null);
+
+  // AI Generate State
+  const [aiSpellings, setAiSpellings] = useState("");
+  const [aiSourceLang, setAiSourceLang] = useState("English");
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiProgress, setAiProgress] = useState<{ current: number; total: number; message: string }>({ current: 0, total: 0, message: "" });
+  const [aiResults, setAiResults] = useState<string[]>([]);
+  const [aiError, setAiError] = useState("");
+
+  // Refactored UI State
+  const [addMode, setAddMode] = useState<"ai" | "single" | "csv" | null>(null);
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
 
   // Load token from localStorage on mount
   useEffect(() => {
@@ -122,35 +141,7 @@ export default function Home() {
     }
   };
 
-  // On-demand TTS play
-  const playWordAudio = async (wordId: string, spelling: string) => {
-    setPlayingWordId(wordId);
-    try {
-      const res = await fetch(`${API_URL}/vocab/words/${wordId}/audio`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const audioUrl = data.audio_url;
-        const absoluteUrl = audioUrl.startsWith("http") 
-          ? audioUrl 
-          : `${API_URL}${audioUrl}`;
-          
-        const audio = new Audio(absoluteUrl);
-        audio.play();
-        audio.onended = () => setPlayingWordId(null);
-      } else {
-        setPlayingWordId(null);
-      }
-    } catch (err) {
-      console.error(err);
-      setPlayingWordId(null);
-    }
-  };
+
 
   // Authenticate (Login or Register)
   const handleAuth = async (e: React.FormEvent) => {
@@ -247,11 +238,12 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: newListName, description: newListDesc })
+        body: JSON.stringify({ name: newListName, description: newListDesc, target_language: newListLang || null })
       });
       if (res.ok) {
         setNewListName("");
         setNewListDesc("");
+        setNewListLang("");
         fetchLists(token);
       }
     } catch (err) {
@@ -297,7 +289,12 @@ export default function Home() {
           spelling: newWordSpelling,
           translation: newWordTranslation,
           definition: newWordDef || null,
-          example_sentence: newWordEx || null
+          example_sentence: newWordEx || null,
+          pronunciation: null,
+          part_of_speech: null,
+          collocation: null,
+          visual_clue: null,
+          exercise_level: 1
         })
       });
       if (res.ok) {
@@ -325,6 +322,36 @@ export default function Home() {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
+        if (activeExplainWord && activeExplainWord.id === wordId) {
+          setActiveExplainWord(null);
+        }
+        fetchLists(token);
+        fetchStats(token);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Bulk Delete Words
+  const handleBulkDelete = async () => {
+    if (!selectedList || !token || selectedWordIds.size === 0) return;
+
+    try {
+      const res = await fetch(`${API_URL}/vocab/lists/${selectedList.id}/words/bulk-delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ word_ids: Array.from(selectedWordIds) })
+      });
+      if (res.ok) {
+        if (activeExplainWord && selectedWordIds.has(activeExplainWord.id)) {
+          setActiveExplainWord(null);
+        }
+        setSelectedWordIds(new Set());
+        setIsDeleteMode(false);
         fetchLists(token);
         fetchStats(token);
       }
@@ -371,6 +398,99 @@ export default function Home() {
       setCsvError(err.message || "An error occurred parsing the CSV.");
     } finally {
       setCsvLoading(false);
+    }
+  };
+
+  // AI Generate Words from Spellings
+  const handleAiGenerate = async () => {
+    if (!selectedList || !token || !aiSpellings.trim()) return;
+
+    setAiGenerating(true);
+    setAiError("");
+    setAiResults([]);
+    setAiProgress({ current: 0, total: 0, message: "Starting AI enrichment..." });
+
+    const spellings = aiSpellings
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (spellings.length === 0) {
+      setAiError("Please enter at least one word.");
+      setAiGenerating(false);
+      return;
+    }
+    if (spellings.length > 50) {
+      setAiError("Maximum 50 words per request.");
+      setAiGenerating(false);
+      return;
+    }
+
+    setAiProgress({ current: 0, total: spellings.length, message: `Sending ${spellings.length} words to AI...` });
+
+    try {
+      const res = await fetch(`${API_URL}/vocab/lists/${selectedList.id}/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          spellings,
+          source_language: aiSourceLang,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: "Generation failed" }));
+        throw new Error(errData.detail || "Generation failed");
+      }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) throw new Error("No response stream");
+
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event = JSON.parse(jsonStr);
+
+            if (event.type === "progress") {
+              setAiProgress((prev) => ({ ...prev, message: event.message }));
+            } else if (event.type === "word_done") {
+              setAiProgress({ current: event.current, total: event.total, message: `✓ ${event.word.spelling}` });
+              setAiResults((prev) => [...prev, `✓ ${event.word.spelling} → ${event.word.translation}`]);
+            } else if (event.type === "error") {
+              setAiResults((prev) => [...prev, `✗ ${event.message}`]);
+            } else if (event.type === "complete") {
+              setAiProgress({ current: event.words_added, total: event.total, message: `Done! ${event.words_added} words enriched.` });
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+
+      setAiSpellings("");
+      fetchLists(token);
+      fetchStats(token);
+    } catch (err: any) {
+      setAiError(err.message || "AI generation failed.");
+    } finally {
+      setAiGenerating(false);
     }
   };
 
@@ -544,6 +664,23 @@ export default function Home() {
                     onChange={(e) => setNewListDesc(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
                   />
+                  <select
+                    value={newListLang}
+                    onChange={(e) => setNewListLang(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+                  >
+                    <option value="">Target Language (Optional)</option>
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
+                    <option value="Vietnamese">Vietnamese</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Korean">Korean</option>
+                    <option value="Chinese">Chinese</option>
+                    <option value="Italian">Italian</option>
+                    <option value="Portuguese">Portuguese</option>
+                  </select>
                   <button
                     type="submit"
                     className="w-full flex items-center justify-center gap-1 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md transition cursor-pointer"
@@ -609,7 +746,14 @@ export default function Home() {
                         <ArrowLeft className="w-3 h-3" />
                         Back to dashboard
                       </button>
-                      <h2 className="text-xl font-display font-bold text-slate-100">{selectedList.name}</h2>
+                      <h2 className="text-xl font-display font-bold text-slate-100">
+                        {selectedList.name}
+                        {selectedList.target_language && (
+                          <span className="ml-2 text-xs font-normal px-2 py-0.5 bg-indigo-950/40 text-indigo-400 rounded-full border border-indigo-900/30">
+                            {selectedList.target_language}
+                          </span>
+                        )}
+                      </h2>
                       <p className="text-xs text-slate-400">{selectedList.description || "No description provided."}</p>
                     </div>
 
@@ -623,144 +767,288 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Add Word Sub-form */}
-                    <div className="bg-slate-950/40 border border-slate-850 rounded-xl p-4">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                        Add Single Word
-                      </h3>
-                      <form onSubmit={handleAddWord} className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <input
-                              type="text"
-                              required
-                              placeholder="Spelling"
-                              value={newWordSpelling}
-                              onChange={(e) => setNewWordSpelling(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
-                            />
-                          </div>
-                          <div>
-                            <input
-                              type="text"
-                              required
-                              placeholder="Translation"
-                              value={newWordTranslation}
-                              onChange={(e) => setNewWordTranslation(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
-                            />
-                          </div>
-                        </div>
-                        <input
-                          type="text"
-                          placeholder="Definition (Optional)"
-                          value={newWordDef}
-                          onChange={(e) => setNewWordDef(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Example Sentence (Optional)"
-                          value={newWordEx}
-                          onChange={(e) => setNewWordEx(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
-                        />
-                        <button
-                          type="submit"
-                          disabled={wordLoading}
-                          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition border border-slate-700 cursor-pointer"
-                        >
-                          {wordLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                          Save Word
-                        </button>
-                      </form>
-                    </div>
-
-                    {/* CSV Upload Section */}
-                    <div className="bg-slate-950/40 border border-slate-850 rounded-xl p-4 flex flex-col justify-between">
-                      <div>
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">
-                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                          Import CSV List
-                        </h3>
-                        <p className="text-[10px] text-slate-400 mb-3">
-                          Expected headers: <strong>spelling, translation, definition, example_sentence</strong>. Limit is 100 lines.
-                        </p>
-
-                        {csvError && (
-                          <p className="text-red-400 text-[10px] bg-red-950/30 p-1.5 rounded border border-red-900/30 mb-2">
-                            {csvError}
-                          </p>
-                        )}
-                        {csvSuccess && (
-                          <p className="text-emerald-400 text-[10px] bg-emerald-950/30 p-1.5 rounded border border-emerald-900/30 mb-2">
-                            {csvSuccess}
-                          </p>
-                        )}
-                      </div>
-
-                      <form onSubmit={handleCsvUpload} className="space-y-3">
-                        <input
-                          id="csv-file-input"
-                          type="file"
-                          accept=".csv"
-                          required
-                          onChange={(e) => setCsvFile(e.target.files ? e.target.files[0] : null)}
-                          className="block w-full text-[10px] text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300 file:cursor-pointer hover:file:bg-slate-750 transition"
-                        />
-                        <button
-                          type="submit"
-                          disabled={csvLoading || !csvFile}
-                          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-emerald-650 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold text-xs transition cursor-pointer shadow-md"
-                        >
-                          {csvLoading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Upload className="w-3.5 h-3.5" />
-                          )}
-                          Upload & Process
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-
-                  {/* Words List */}
-                  <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                  {/* Words List Header with Actions */}
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mt-4">
+                    <div className="flex items-center gap-3">
                       <h3 className="text-sm font-bold text-slate-300">Words ({filteredWords.length})</h3>
+                      {isDeleteMode && selectedWordIds.size > 0 && (
+                        <button
+                          onClick={handleBulkDelete}
+                          className="text-xs bg-red-950/50 hover:bg-red-900/50 text-red-400 px-2 py-1 rounded-md border border-red-900/50 transition flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Delete ({selectedWordIds.size})
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
                       {/* Search Bar */}
-                      <div className="relative max-w-xs w-full">
+                      <div className="relative flex-1 sm:w-[250px]">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                         <input
                           type="text"
-                          placeholder="Search spelling or translation..."
+                          placeholder="Search..."
                           value={wordSearch}
                           onChange={(e) => setWordSearch(e.target.value)}
                           className="w-full bg-slate-950 border border-slate-850 rounded-xl py-1.5 pl-8 pr-3.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
                         />
                       </div>
+                      
+                      {/* Actions */}
+                      <button
+                        onClick={() => setAddMode(addMode ? null : "ai")}
+                        className={`p-1.5 rounded-lg border transition flex-shrink-0 ${addMode ? "bg-indigo-600 border-indigo-500 text-white" : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
+                        title="Add Words"
+                      >
+                        <Plus className={`w-4 h-4 transition-transform ${addMode ? "rotate-45" : ""}`} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsDeleteMode(!isDeleteMode);
+                          if (isDeleteMode) setSelectedWordIds(new Set());
+                        }}
+                        className={`p-1.5 rounded-lg border transition flex-shrink-0 ${isDeleteMode ? "bg-red-950 border-red-900 text-red-400" : "bg-slate-900 border-slate-800 text-slate-400 hover:text-red-400 hover:bg-slate-800"}`}
+                        title="Bulk Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
+                  </div>
 
-                    <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20">
+                  {/* Add Words Dropdown Panel */}
+                  {addMode && (
+                    <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 mt-2 mb-4 relative animate-in slide-in-from-top-2 fade-in duration-200">
+                      <div className="flex items-center justify-between mb-4 border-b border-slate-850 pb-3 relative">
+                        <select
+                          value={addMode}
+                          onChange={(e) => setAddMode(e.target.value as any)}
+                          className="bg-transparent text-sm font-semibold text-slate-200 focus:outline-none cursor-pointer appearance-none pr-8 relative z-10"
+                        >
+                          <option value="ai" className="bg-slate-900 text-slate-200">✨ AI Generate from Word List</option>
+                          <option value="single" className="bg-slate-900 text-slate-200">➕ Add Single Word</option>
+                          <option value="csv" className="bg-slate-900 text-slate-200">📊 Import CSV List</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-500 absolute left-[210px] pointer-events-none" />
+                        <button onClick={() => setAddMode(null)} className="text-slate-500 hover:text-slate-300">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {addMode === "single" && (
+                        <div className="max-w-2xl">
+                          <form onSubmit={handleAddWord} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="Spelling"
+                                  value={newWordSpelling}
+                                  onChange={(e) => setNewWordSpelling(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="Translation"
+                                  value={newWordTranslation}
+                                  onChange={(e) => setNewWordTranslation(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Definition (Optional)"
+                              value={newWordDef}
+                              onChange={(e) => setNewWordDef(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Example Sentence (Optional)"
+                              value={newWordEx}
+                              onChange={(e) => setNewWordEx(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition"
+                            />
+                            <button
+                              type="submit"
+                              disabled={wordLoading}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition border border-slate-700 cursor-pointer"
+                            >
+                              {wordLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                              Save Word
+                            </button>
+                          </form>
+                        </div>
+                      )}
+
+                      {addMode === "csv" && (
+                        <div className="max-w-2xl flex flex-col justify-between">
+                          <div>
+                            <p className="text-[10px] text-slate-400 mb-3">
+                              Headers: <strong>spelling, translation, definition, example_sentence</strong> (required). Optional: <strong>pronunciation, part_of_speech, collocation, visual_clue, exercise_level</strong>. Limit: 100 rows.
+                            </p>
+
+                            {csvError && (
+                              <p className="text-red-400 text-[10px] bg-red-950/30 p-1.5 rounded border border-red-900/30 mb-2">
+                                {csvError}
+                              </p>
+                            )}
+                            {csvSuccess && (
+                              <p className="text-emerald-400 text-[10px] bg-emerald-950/30 p-1.5 rounded border border-emerald-900/30 mb-2">
+                                {csvSuccess}
+                              </p>
+                            )}
+                          </div>
+
+                          <form onSubmit={handleCsvUpload} className="space-y-3">
+                            <input
+                              id="csv-file-input"
+                              type="file"
+                              accept=".csv"
+                              required
+                              onChange={(e) => setCsvFile(e.target.files ? e.target.files[0] : null)}
+                              className="block w-full text-[10px] text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300 file:cursor-pointer hover:file:bg-slate-750 transition"
+                            />
+                            <button
+                              type="submit"
+                              disabled={csvLoading || !csvFile}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-emerald-650 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold text-xs transition cursor-pointer shadow-md"
+                            >
+                              {csvLoading ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Upload className="w-3.5 h-3.5" />
+                              )}
+                              Upload & Process
+                            </button>
+                          </form>
+                        </div>
+                      )}
+
+                      {addMode === "ai" && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-3">
+                            <p className="text-[10px] text-slate-400 mb-1">
+                              Paste your words below (one per line or comma-separated). AI will generate translations, definitions, examples, pronunciation, and exercises automatically.
+                            </p>
+                            <textarea
+                              value={aiSpellings}
+                              onChange={(e) => setAiSpellings(e.target.value)}
+                              placeholder={"generous\nborrow\nexhausted\ndelicate\npersist"}
+                              rows={6}
+                              disabled={aiGenerating}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 transition resize-none font-mono placeholder:text-slate-600"
+                            />
+                            <div className="flex gap-2">
+                              <select
+                                value={aiSourceLang}
+                                onChange={(e) => setAiSourceLang(e.target.value)}
+                                disabled={aiGenerating}
+                                className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 transition"
+                              >
+                                <option value="English">Translate to English</option>
+                                <option value="Vietnamese">Translate to Vietnamese</option>
+                                <option value="Spanish">Translate to Spanish</option>
+                                <option value="French">Translate to French</option>
+                                <option value="German">Translate to German</option>
+                                <option value="Japanese">Translate to Japanese</option>
+                                <option value="Korean">Translate to Korean</option>
+                                <option value="Chinese">Translate to Chinese</option>
+                              </select>
+                              <button
+                                onClick={handleAiGenerate}
+                                disabled={aiGenerating || !aiSpellings.trim()}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-amber-600/20"
+                              >
+                                {aiGenerating ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                )}
+                                {aiGenerating ? "Generating..." : "✨ Generate"}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Progress / Results Panel */}
+                          <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3 max-h-[200px] overflow-y-auto mt-6 md:mt-0">
+                            {aiError && (
+                              <p className="text-red-400 text-[10px] bg-red-950/30 p-1.5 rounded border border-red-900/30 mb-2">
+                                {aiError}
+                              </p>
+                            )}
+                            {aiGenerating && (
+                              <div className="mb-2">
+                                <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                  <span>{aiProgress.message}</span>
+                                  {aiProgress.total > 0 && (
+                                    <span>{aiProgress.current}/{aiProgress.total}</span>
+                                  )}
+                                </div>
+                                <div className="w-full bg-slate-800 rounded-full h-1.5">
+                                  <div
+                                    className="bg-gradient-to-r from-amber-500 to-orange-500 h-1.5 rounded-full transition-all duration-300"
+                                    style={{ width: aiProgress.total > 0 ? `${(aiProgress.current / aiProgress.total) * 100}%` : "0%" }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            {aiResults.length > 0 ? (
+                              <div className="space-y-0.5">
+                                {aiResults.map((r, i) => (
+                                  <p key={i} className={`text-[10px] font-mono ${r.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}>
+                                    {r}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : !aiGenerating && !aiError ? (
+                              <p className="text-[10px] text-slate-500 text-center py-4">AI results will appear here.</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/20">
                       {filteredWords.length === 0 ? (
                         <p className="text-xs text-slate-500 text-center py-8">No words found matching search.</p>
                       ) : (
                         <div className="divide-y divide-slate-850 max-h-[350px] overflow-y-auto">
                           {filteredWords.map((w) => (
                             <div key={w.id} className="flex justify-between items-start p-3 hover:bg-slate-900/20 transition">
-                              <div className="space-y-1 pr-2">
+                              <div className="flex items-start gap-3 w-full pr-2">
+                                {isDeleteMode && (
+                                  <div className="pt-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedWordIds.has(w.id)}
+                                      onChange={(e) => {
+                                        const newSet = new Set(selectedWordIds);
+                                        if (e.target.checked) newSet.add(w.id);
+                                        else newSet.delete(w.id);
+                                        setSelectedWordIds(newSet);
+                                      }}
+                                      className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-950 cursor-pointer"
+                                    />
+                                  </div>
+                                )}
+                                <div className="space-y-1 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <strong className="text-sm text-indigo-400 font-semibold">{w.spelling}</strong>
-                                  <button
-                                    onClick={() => playWordAudio(w.id, w.spelling)}
-                                    className="text-slate-500 hover:text-indigo-400 transition p-1 hover:bg-slate-900/80 rounded"
-                                    title="Play pronunciation"
-                                  >
-                                    <Volume2 className={`w-3.5 h-3.5 ${playingWordId === w.id ? "animate-bounce text-indigo-400" : ""}`} />
-                                  </button>
+                                  {w.part_of_speech && (
+                                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 bg-violet-950/40 text-violet-400 rounded border border-violet-900/30">{w.part_of_speech}</span>
+                                  )}
                                   <span className="text-xs text-slate-500">—</span>
                                   <span className="text-sm text-slate-200">{w.translation}</span>
+                                  {w.pronunciation && (
+                                    <span className="text-xs text-slate-500 italic">/{w.pronunciation}/</span>
+                                  )}
                                 </div>
                                 {w.definition && (
                                   <p className="text-xs text-slate-400 italic">Def: {w.definition}</p>
@@ -768,6 +1056,17 @@ export default function Home() {
                                 {w.example_sentence && (
                                   <p className="text-xs text-slate-500 font-mono">Ex: &quot;{w.example_sentence}&quot;</p>
                                 )}
+                                {(w.collocation || w.visual_clue) && (
+                                  <div className="flex gap-3 flex-wrap">
+                                    {w.collocation && (
+                                      <span className="text-[10px] text-teal-400">🔗 {w.collocation}</span>
+                                    )}
+                                    {w.visual_clue && (
+                                      <span className="text-[10px] text-amber-400">💡 {w.visual_clue}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                               </div>
                               <div className="flex gap-1 shrink-0 mt-0.5">
                                 <button
@@ -790,7 +1089,6 @@ export default function Home() {
                       )}
                     </div>
                   </div>
-                </div>
                 {activeExplainWord && (
                     <div className="xl:col-span-5 h-[480px]">
                       <AiExplainPanel

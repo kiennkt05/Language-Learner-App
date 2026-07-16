@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Award, CheckCircle2, AlertCircle, Loader2, Sparkles, RefreshCw, ArrowRight, BookOpen, Volume2 } from "lucide-react";
+import { X, Award, CheckCircle2, AlertCircle, Loader2, Sparkles, RefreshCw, ArrowRight, BookOpen } from "lucide-react";
 import ExerciseCard from "./ExerciseCard";
 
 interface Exercise {
@@ -51,7 +51,6 @@ export default function ReviewSession({
   const [exerciseSubmitted, setExerciseSubmitted] = useState(false);
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [sessionCompleted, setSessionCompleted] = useState(false);
-  const [playingWordId, setPlayingWordId] = useState<string | null>(null);
 
   // Session Statistics
   const [answersLog, setAnswersLog] = useState<{
@@ -184,34 +183,7 @@ export default function ReviewSession({
     }
   };
 
-  const playReviewAudio = async (wordId: string, spelling: string) => {
-    setPlayingWordId(wordId);
-    try {
-      const res = await fetch(`${API_URL}/vocab/words/${wordId}/audio`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const audioUrl = data.audio_url;
-        const absoluteUrl = audioUrl.startsWith("http") 
-          ? audioUrl 
-          : `${API_URL}${audioUrl}`;
-          
-        const audio = new Audio(absoluteUrl);
-        audio.play();
-        audio.onended = () => setPlayingWordId(null);
-      } else {
-        setPlayingWordId(null);
-      }
-    } catch (err) {
-      console.error(err);
-      setPlayingWordId(null);
-    }
-  };
+
 
   // Calculate global progress stats
   const totalExercises = cards.reduce((acc, c) => acc + (c.exercises?.length || 0), 0);
@@ -446,13 +418,6 @@ export default function ReviewSession({
               )}
             </div>
           </div>
-          <button
-            onClick={() => playReviewAudio(currentCard.word_id, currentCard.spelling)}
-            className="text-slate-450 hover:text-indigo-400 transition p-2 bg-slate-950/60 border border-slate-850 rounded-xl hover:scale-105"
-            title="Listen pronunciation"
-          >
-            <Volume2 className={`w-4 h-4 ${playingWordId === currentCard.word_id ? "animate-bounce text-indigo-400" : ""}`} />
-          </button>
         </div>
 
         {/* Active Exercise Component */}

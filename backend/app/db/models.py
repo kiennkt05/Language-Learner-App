@@ -20,6 +20,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=True)
     google_id = Column(String, unique=True, nullable=True, index=True)
+    tier = Column(String(50), default="premium", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
@@ -35,6 +36,7 @@ class VocabList(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(String, nullable=True)
+    target_language = Column(String(100), nullable=True)  # e.g. "Spanish", "French", "Vietnamese"
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
@@ -50,7 +52,11 @@ class Word(Base):
     translation = Column(String(255), nullable=False)
     definition = Column(String, nullable=True)
     example_sentence = Column(String, nullable=True)
-    audio_url = Column(String, nullable=True)
+    pronunciation = Column(String(255), nullable=True)       # IPA or phonetic
+    part_of_speech = Column(String(50), nullable=True)        # noun, verb, adj, etc.
+    collocation = Column(String, nullable=True)               # common word pairings
+    visual_clue = Column(String, nullable=True)               # mnemonic / visual hint
+    exercise_level = Column(SmallInteger, default=1, nullable=True)  # 1=beginner, 2=intermediate, 3=advanced
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships

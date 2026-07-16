@@ -19,8 +19,10 @@ export default function AiExplainPanel({
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
 
   const startStreaming = async () => {
+    if (!isMountedRef.current) return;
     setExplanation("");
     setLoading(true);
     setError("");
@@ -42,6 +44,7 @@ export default function AiExplainPanel({
         signal: controller.signal
       });
 
+      if (!isMountedRef.current) return;
       if (!response.ok) {
         throw new Error(`Failed to initiate streaming: ${response.statusText}`);
       }
@@ -53,11 +56,13 @@ export default function AiExplainPanel({
         throw new Error("Streaming reader is not supported on this browser.");
       }
 
+      if (!isMountedRef.current) return;
       setLoading(false); // First byte received or reader ready
       let buffer = "";
 
       while (true) {
         const { done: streamDone, value } = await reader.read();
+        if (!isMountedRef.current) break;
         if (streamDone) {
           setDone(true);
           break;
@@ -81,6 +86,7 @@ export default function AiExplainPanel({
         }
       }
     } catch (err: any) {
+      if (!isMountedRef.current) return;
       if (err.name === "AbortError") {
         console.log("Stream fetch aborted successfully.");
         return;
@@ -91,9 +97,11 @@ export default function AiExplainPanel({
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
     startStreaming();
 
     return () => {
+      isMountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }

@@ -70,23 +70,41 @@ def get_srs_session(
         # Make sure word has exercises generated
         exercises = db.query(Exercise).filter(Exercise.word_id == card.word_id).all()
         if not exercises:
-            # Generate MCQ (Reception)
+            # Fetch sibling words for distractor context
+            other_translations = []
+            other_words = []
+            list_ids = [l.id for l in card.word.vocab_lists if l.user_id == current_user.id]
+            if list_ids:
+                siblings = db.query(Word).join(Word.vocab_lists).filter(
+                    VocabList.id.in_(list_ids),
+                    Word.id != card.word_id
+                ).distinct().all()
+                other_translations = [s.translation for s in siblings if s.translation]
+                other_words = [{"spelling": s.spelling, "translation": s.translation} for s in siblings if s.spelling and s.translation]
+
             try:
-                mcq_data = generate_exercise_for_word(card.word.spelling, card.word.translation, "mcq")
-                mcq_ex = Exercise(word_id=card.word_id, type="mcq", data=mcq_data)
-                db.add(mcq_ex)
+                from app.services.ai import BALANCED_SET
+
+                # Delete any stale exercises
+                db.query(Exercise).filter(Exercise.word_id == card.word_id).delete()
+
+                # Generate balanced 5-exercise set
+                for ex_type in BALANCED_SET:
+                    ex_data = generate_exercise_for_word(
+                        card.word.spelling, card.word.translation, ex_type,
+                        other_translations=other_translations,
+                        other_words=other_words,
+                        definition=card.word.definition,
+                        collocation=card.word.collocation,
+                        part_of_speech=card.word.part_of_speech,
+                    )
+                    db.add(Exercise(word_id=card.word_id, type=ex_type, data=ex_data))
+
+                db.commit()
             except Exception as e:
-                print(f"Failed to auto generate MCQ in session: {e}")
+                db.rollback()
+                print(f"Failed to auto generate exercises in session: {e}")
                 
-            # Generate Fill Blank (Production)
-            try:
-                fb_data = generate_exercise_for_word(card.word.spelling, card.word.translation, "fill_blank")
-                fb_ex = Exercise(word_id=card.word_id, type="fill_blank", data=fb_data)
-                db.add(fb_ex)
-            except Exception as e:
-                print(f"Failed to auto generate Fill Blank in session: {e}")
-                
-            db.commit()
             # Fetch again after commit
             exercises = db.query(Exercise).filter(Exercise.word_id == card.word_id).all()
             

@@ -1,12 +1,11 @@
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
-from groq import Groq
 
 from app.db.session import get_db
-from app.db.models import Word
+from app.db.models import Word, VocabList
 from app.auth.security import get_current_user, User
 from app.config import settings
 
@@ -24,22 +23,36 @@ async def explain_word(
     """
     word = db.query(Word).filter(Word.id == word_id).first()
     if not word:
-        raise HTTPException(status_code=404, detail="Word not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Word not found")
+
+    # Check word ownership
+    is_owned = db.query(VocabList).join(VocabList.words).filter(
+        VocabList.user_id == current_user.id,
+        Word.id == word_id
+    ).first()
+    if not is_owned:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Word not found or access denied"
+        )
+
+
 
     async def event_generator():
         # Check if Groq API Key is configured
         if settings.GROQ_API_KEY:
             try:
-                raw_client = Groq(api_key=settings.GROQ_API_KEY)
+                from groq import AsyncGroq
+                raw_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
                 prompt = (
                     f"Provide etymology, usage nuances, cultural context, and a mnemonic to memorize "
                     f"the language learning word '{word.spelling}' (translation: '{word.translation}'). "
                     f"Format the output cleanly in Markdown with headings."
                 )
                 
-                # Stream from Groq using llama3-8b-8192 (fast, cheap)
-                completion = raw_client.chat.completions.create(
-                    model="llama3-8b-8192",
+                # Stream from Groq using settings.GROQ_MODEL
+                completion = await raw_client.chat.completions.create(
+                    model=settings.GROQ_MODEL,
                     messages=[
                         {"role": "system", "content": "You are a helpful language learning assistant. Always return structured Markdown responses."},
                         {"role": "user", "content": prompt}
@@ -48,7 +61,7 @@ async def explain_word(
                     temperature=0.7
                 )
                 
-                for chunk in completion:
+                async for chunk in completion:
                     # Yield content as SSE token
                     content = chunk.choices[0].delta.content
                     if content:
@@ -76,7 +89,6 @@ async def explain_word(
         )
         
         # Stream mock explanation chunk by chunk
-        # Send word by word or chunk by chunk to simulate real time streaming
         chunks = [mock_explanation[i:i+8] for i in range(0, len(mock_explanation), 8)]
         for chunk in chunks:
             yield f"data: {chunk}\n\n"

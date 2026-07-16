@@ -15,4 +15,3 @@ cryptography
 python-dotenv
 requests
 groq
-instructor

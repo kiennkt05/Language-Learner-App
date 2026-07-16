@@ -109,3 +109,32 @@ All **23 tests** passed successfully!
    - You will see a **Speaker Icon (🔊)** next to word spelling strings.
    - Click it to play audio pronunciation immediately (caches local mp3 or uploads to R2).
    - Speaker icons are also active in the **Active Word Hint** bar during review sessions!
+
+---
+
+## 🛠 Code Critique Fixes (Phase 5)
+
+We have addressed the critical issues, bugs, and UX improvements identified during the code critique:
+
+1. **Security & Ownership Checks**: Added user-scoping validation to protect vocabulary words, audio generation, and exercises from cross-user access on all endpoints.
+2. **Event Loop Starvation Fix**: Replaced the synchronous `Groq` client inside `explain_word` with the asynchronous `AsyncGroq` client, streaming explanation chunks with `async for chunk in completion` to prevent loop blocking.
+3. **Pydantic & Client Thread-Safety**: Cached the Groq client initialization using `@lru_cache(maxsize=1)` and centralized the active model string to `settings.GROQ_MODEL`.
+4. **Atomic Exercise Transactions**: Wrapped multiple exercise generation steps inside transactional try-except-rollback blocks to ensure zero partial database commits.
+5. **GET Idempotency**: Stripped the database-writing side-effects from the `GET /words/{word_id}/exercises` route.
+6. **Smart Mock Distractors**: Randomization seed was removed to allow randomized options on every query. The mock generator now queries siblings from the same vocabulary list for real local translations as distractor options.
+7. **Interactive Matching Card Game**: Refactored the `MatchExercise` schema into a proper list of 4 spelling-translation pairs, and implemented an interactive click-to-match column puzzle layout in the frontend `ExerciseCard.tsx`.
+8. **Anki-Style Recall Quality Flow**: Shifted `ExerciseCard` submission from instant grading to a two-step recall quality flow: the UI first checks spelling/MCQ correctness and then prompts the learner to submit recall difficulty (**Again (1)**, **Hard (3)**, **Good (4)**, or **Easy (5)**).
+9. **Diacritics Normalization & Sentence Constraints**: Normalizes fill-in-the-blank text inputs using Unicode diacritics stripping (`normalize("NFD")`) to mark accented characters correct, and checks sentence writing bounds (length >= 15 characters, word count >= 3).
+10. **Cleanup & Memory Leak Prevention**: Added `isMountedRef` unmount check cleanups within `AiExplainPanel.tsx` hooks, and clears the active panel state in `page.tsx` when the open word is deleted.
+
+### Unit Test Execution
+All **23 unit tests** are fully passing after refactoring backend routes to check ownership and update matching schema assertions:
+```text
+tests/test_ai.py ...
+tests/test_audio.py ...
+tests/test_auth.py ......
+tests/test_srs.py .....
+tests/test_stats.py .
+tests/test_vocab.py ....
+================ 23 passed, 432 warnings in 113.07s (0:01:53) =================
+```

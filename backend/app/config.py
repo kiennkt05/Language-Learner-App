@@ -22,7 +22,7 @@ class Settings:
     
     # AI & Services (fall back to mock mode if key is missing)
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    GOOGLE_TTS_API_KEY: str = os.getenv("GOOGLE_TTS_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     
     # OAuth
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -38,9 +38,6 @@ class Settings:
     def is_groq_mocked(self) -> bool:
         return not self.GROQ_API_KEY
 
-    @property
-    def is_tts_mocked(self) -> bool:
-        return not self.GOOGLE_TTS_API_KEY
 
     @property
     def is_r2_mocked(self) -> bool:

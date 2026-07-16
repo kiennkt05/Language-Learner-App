@@ -111,10 +111,13 @@ def test_srs_session_filtering_and_exercise_generation(client, db_session, test_
     assert data[0]["spelling"] == "worda"
     
     # Verify exercises are generated and response includes exercises
-    assert len(data[0]["exercises"]) == 2
+    assert len(data[0]["exercises"]) == 5  # Balanced set: match, fill_blank, mcq, sentence_writing, odd_one_out
     types = {ex["type"] for ex in data[0]["exercises"]}
     assert "mcq" in types
     assert "fill_blank" in types
+    assert "match" in types
+    assert "sentence_writing" in types
+    assert "odd_one_out" in types
 
 def test_submit_card_review(client, db_session, test_user, auth_headers):
     word = Word(spelling="submitword", translation="translation")
