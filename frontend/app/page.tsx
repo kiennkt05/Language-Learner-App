@@ -6,7 +6,7 @@ import {
   FileSpreadsheet, ArrowLeft, Loader2, Key, Mail, 
   AlertCircle, CheckCircle, Globe, Sparkles, ChevronDown, X
 } from "lucide-react";
-import AiExplainPanel from "../components/AiExplainPanel";
+import FloatingChat, { ChatMessage } from "../components/FloatingChat";
 import ReviewSession from "../components/ReviewSession";
 
 // API Base URL config
@@ -64,7 +64,8 @@ export default function Home() {
   const [csvError, setCsvError] = useState("");
   const [csvSuccess, setCsvSuccess] = useState("");
   const [csvLoading, setCsvLoading] = useState(false);
-  const [activeExplainWord, setActiveExplainWord] = useState<{ id: string; spelling: string; translation: string } | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [externalTriggerMessage, setExternalTriggerMessage] = useState<ChatMessage | null>(null);
   const [activeReviewSession, setActiveReviewSession] = useState<{ id: string | null; name: string } | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -223,7 +224,8 @@ export default function Home() {
     setPassword("");
     setAuthSuccess("");
     setAuthError("");
-    setActiveExplainWord(null);
+    setIsChatOpen(false);
+    setExternalTriggerMessage(null);
   };
 
   // Create List
@@ -322,9 +324,6 @@ export default function Home() {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        if (activeExplainWord && activeExplainWord.id === wordId) {
-          setActiveExplainWord(null);
-        }
         fetchLists(token);
         fetchStats(token);
       }
@@ -347,9 +346,6 @@ export default function Home() {
         body: JSON.stringify({ word_ids: Array.from(selectedWordIds) })
       });
       if (res.ok) {
-        if (activeExplainWord && selectedWordIds.has(activeExplainWord.id)) {
-          setActiveExplainWord(null);
-        }
         setSelectedWordIds(new Set());
         setIsDeleteMode(false);
         fetchLists(token);
@@ -702,7 +698,7 @@ export default function Home() {
                     lists.map((l) => (
                       <div
                         key={l.id}
-                        onClick={() => { setSelectedList(l); setActiveExplainWord(null); }}
+                        onClick={() => setSelectedList(l)}
                         className={`flex justify-between items-center p-3 rounded-xl border text-left cursor-pointer transition ${
                           selectedList?.id === l.id
                             ? "bg-indigo-950/40 border-indigo-500/80"
@@ -735,7 +731,7 @@ export default function Home() {
             <div className="lg:col-span-8 grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
               {selectedList ? (
                 <>
-                  <div className={`${activeExplainWord ? "xl:col-span-7" : "xl:col-span-12"} space-y-6 bg-slate-900/30 backdrop-blur-md border border-slate-800 rounded-2xl p-6 transition-all duration-300`}>
+                  <div className="xl:col-span-12 space-y-6 bg-slate-900/30 backdrop-blur-md border border-slate-800 rounded-2xl p-6 transition-all duration-300">
                   {/* List Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
                     <div>
@@ -1070,7 +1066,14 @@ export default function Home() {
                               </div>
                               <div className="flex gap-1 shrink-0 mt-0.5">
                                 <button
-                                  onClick={() => setActiveExplainWord({ id: w.id, spelling: w.spelling, translation: w.translation })}
+                                  onClick={() => {
+                                    setExternalTriggerMessage({
+                                      id: Date.now().toString(),
+                                      role: "user",
+                                      displayContent: `Give me Insight about the word ${w.spelling}`,
+                                      actualContent: `Provide etymology, usage nuances, cultural context, and a mnemonic to memorize the language learning word '${w.spelling}' (translation: '${w.translation}'). Format the output cleanly in Markdown with headings.`
+                                    });
+                                  }}
                                   className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-slate-900 transition"
                                   title="AI Insights"
                                 >
@@ -1089,17 +1092,6 @@ export default function Home() {
                       )}
                     </div>
                   </div>
-                {activeExplainWord && (
-                    <div className="xl:col-span-5 h-[480px]">
-                      <AiExplainPanel
-                        wordId={activeExplainWord.id}
-                        spelling={activeExplainWord.spelling}
-                        translation={activeExplainWord.translation}
-                        token={token || ""}
-                        onClose={() => setActiveExplainWord(null)}
-                      />
-                    </div>
-                  )}
                 </>
               ) : (
                 <div className="xl:col-span-12 space-y-6">
@@ -1220,6 +1212,13 @@ export default function Home() {
           }}
         />
       )}
+      <FloatingChat
+        token={token}
+        isOpen={isChatOpen}
+        setIsOpen={setIsChatOpen}
+        externalTriggerMessage={externalTriggerMessage}
+        clearExternalTrigger={() => setExternalTriggerMessage(null)}
+      />
     </main>
   );
 }

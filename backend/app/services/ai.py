@@ -463,16 +463,21 @@ def _build_enrichment_prompt(
     """Builds a compact prompt for word enrichment."""
     word_list_str = ", ".join(spellings)
     return (
-        f"Enrich these {target_language} vocabulary words: {word_list_str}\n\n"
-        f"For each word return: spelling, translation ({source_language}), "
-        f"definition ({source_language}, 1-2 sentences), example_sentence (in {target_language}), "
-        f"pronunciation (IPA), part_of_speech, collocation, visual_clue (mnemonic), "
-        f"exercise_level (1=beginner, 2=intermediate, 3=advanced).\n\n"
+        f"You are a language teacher creating vocabulary flashcards. The user provided these input words: {word_list_str}\n\n"
+        f"The user wants flashcards for learning these words. As a robust default, you must ALWAYS translate the words into English.\n\n"
+        f"IMPORTANT INSTRUCTIONS FOR LANGUAGE MAPPING:\n"
+        f"1. The 'spelling' field MUST be the exact input word exactly as provided by the user (do not translate it).\n"
+        f"2. The 'translation' field MUST be the English translation of the input word.\n"
+        f"3. The 'definition' field MUST be 1-2 sentences in English explaining the word.\n"
+        f"4. The 'example_sentence' field MUST be a natural sentence in the original language of the input word.\n\n"
+        f"For each word, return a JSON object with the following fields: "
+        f"spelling, translation, definition, example_sentence, pronunciation (IPA for the 'spelling'), "
+        f"part_of_speech, collocation, visual_clue (mnemonic in English), exercise_level (1=beginner, 2=intermediate, 3=advanced).\n\n"
         f"Example format:\n"
-        f'{{"words": [{{"spelling": "hello", "translation": "xin chao", '
-        f'"definition": "a greeting", "example_sentence": "Hello, how are you?", '
-        f'"pronunciation": "/heLOU/", "part_of_speech": "interjection", '
-        f'"collocation": "say hello", "visual_clue": "waving hand", "exercise_level": 1}}]}}'
+        f'{{"words": [{{"spelling": "<exact input word>", "translation": "<English meaning>", '
+        f'"definition": "<English definition>", "example_sentence": "<example in input language>", '
+        f'"pronunciation": "<IPA>", "part_of_speech": "noun", '
+        f'"collocation": "<common usage>", "visual_clue": "<mnemonic>", "exercise_level": 1}}]}}'
     )
 
 

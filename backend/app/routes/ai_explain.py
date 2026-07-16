@@ -9,7 +9,78 @@ from app.db.models import Word, VocabList
 from app.auth.security import get_current_user, User
 from app.config import settings
 
+from pydantic import BaseModel
+from typing import List
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+@router.post("/chat")
+async def chat_endpoint(
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generic chat endpoint. Streams a response back from the LLM based on message history.
+    """
+    async def event_generator():
+        if settings.GROQ_API_KEY:
+            try:
+                from groq import AsyncGroq
+                raw_client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+                
+                formatted_messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+                
+                messages = [
+                    {"role": "system", "content": "You are a helpful, friendly language learning assistant. Always return structured Markdown responses."}
+                ]
+                messages.extend(formatted_messages)
+
+                completion = await raw_client.chat.completions.create(
+                    model=settings.GROQ_MODEL,
+                    messages=messages,
+                    stream=True,
+                    temperature=0.7
+                )
+                
+                async for chunk in completion:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        import json
+                        encoded = json.dumps({"content": content})
+                        yield f"data: {encoded}\n\n"
+                        await asyncio.sleep(0.01)
+                yield "data: [DONE]\n\n"
+                return
+            except Exception as e:
+                print(f"Groq streaming failed: {e}. Falling back to mock streaming.")
+        
+        # Mock streaming mode fallback
+        mock_response = (
+            "### Mock AI Response\n\n"
+            "This is a simulated response because the Groq API key is not configured or an error occurred.\n"
+        )
+        chunks = [mock_response[i:i+8] for i in range(0, len(mock_response), 8)]
+        for chunk in chunks:
+            yield f"data: {chunk}\n\n"
+            await asyncio.sleep(0.05)
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @router.get("/words/{word_id}/explain")
 async def explain_word(

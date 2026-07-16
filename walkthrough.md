@@ -1,3 +1,46 @@
+# Walkthrough - Phase 5 (Floating Chat & AI Insights) Completed
+
+We have successfully replaced the inline `AiExplainPanel` with a global floating chat widget that uses proper Markdown rendering for the AI Insights feature. The chat also allows freeform conversation with the AI.
+
+---
+
+## 📁 Project Structure Updates
+
+```text
+language-learner-app/
+├── backend/
+│   └── app/
+│       └── routes/
+│           ├── ai_explain.py          <-- [UPDATED] Added POST /ai/chat generic endpoint
+└── frontend/
+    ├── components/
+    │   ├── AiExplainPanel.tsx         <-- [DELETED] Replaced by FloatingChat
+    │   └── FloatingChat.tsx           <-- [NEW] Floating chat widget with React-Markdown
+    └── app/
+        └── page.tsx                   <-- [UPDATED] Integrated FloatingChat, removed activeExplainWord state
+```
+
+---
+
+## ✨ Features Implemented
+
+1. **Floating Chat Widget**: A new floating chat button in the bottom right corner that expands into a full chat interface, allowing users to ask general questions or get specific insights.
+2. **AI Insights Integration**: Clicking the Sparkles (AI Insights) button on a vocabulary word now automatically opens the chat widget and pre-fills it with a request for insights on that word.
+3. **Display Text vs. Actual Prompt**: The chat UI intelligently shows a simple user message (e.g., `"Give me Insight about the word XYZ"`) while sending the complex, detailed prompt to the LLM backend to ensure high-quality responses.
+4. **Markdown Rendering**: Responses from the LLM are now fully rendered using `react-markdown` and `remark-gfm`, supporting rich formatting like bold text, italics, lists, and tables.
+5. **Generic Chat API**: Added a new `POST /ai/chat` endpoint to the FastAPI backend to handle multi-turn conversational histories.
+
+---
+
+## 🚀 How to Verify Features in the UI
+
+1. Click the floating chat icon in the bottom right to open the chat window.
+2. Try asking a general language learning question (e.g., "What is the difference between ser and estar in Spanish?").
+3. Select a vocabulary list and click the **Sparkles (✨)** button next to any word.
+4. Watch the chat window pop open automatically and stream a highly detailed Markdown-formatted response about the word's etymology, nuances, and mnemonics.
+
+---
+
 # Walkthrough - Phase 4 (Analytics & Polish) Completed
 
 We have successfully implemented the full Spaced Repetition (SM-2) stats dashboard, on-demand TTS audio generation with local static caching/R2 uploading, UI dashboards, and empty/loading states layout.
