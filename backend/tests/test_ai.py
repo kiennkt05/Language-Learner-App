@@ -4,7 +4,8 @@ from unittest.mock import patch
 from app.services.ai import generate_exercise_for_word, BALANCED_SET, EXERCISE_TYPES
 from app.db.models import VocabList, Word, Exercise
 
-def test_mock_exercise_generators_original_types():
+@patch("app.services.ai.get_groq_client", return_value=None)
+def test_mock_exercise_generators_original_types(mock_get_client):
     """Test that the 4 original exercise types still generate correctly."""
     # Test MCQ Mock Generation
     mcq = generate_exercise_for_word("perro", "dog", "mcq")
@@ -30,7 +31,8 @@ def test_mock_exercise_generators_original_types():
     assert sw["required_word"] == "amigo"
 
 
-def test_mock_exercise_generators_new_types():
+@patch("app.services.ai.get_groq_client", return_value=None)
+def test_mock_exercise_generators_new_types(mock_get_client):
     """Test the 5 new exercise types generate valid mock data."""
     # Word Grouping
     wg = generate_exercise_for_word("perro", "dog", "word_grouping")
@@ -93,7 +95,8 @@ def test_unknown_exercise_type_raises():
         generate_exercise_for_word("perro", "dog", "nonexistent_type")
 
 
-def test_generate_and_fetch_exercises_endpoint(client, db_session, test_user, auth_headers):
+@patch("app.services.ai.get_groq_client", return_value=None)
+def test_generate_and_fetch_exercises_endpoint(mock_get_client, client, db_session, test_user, auth_headers):
     # Setup list and test word
     vocab_list = VocabList(user_id=test_user.id, name="AI Test List", description="")
     db_session.add(vocab_list)
@@ -145,7 +148,8 @@ def test_explain_word_sse_stream_endpoint(client, db_session, test_user, auth_he
     assert "[done]" in response.text.lower()
 
 
-def test_mock_enrich_words():
+@patch("app.services.ai.get_groq_client", return_value=None)
+def test_mock_enrich_words(mock_get_client):
     """Test the mock enrichment fallback."""
     from app.services.ai import enrich_words_from_spellings
 
@@ -173,7 +177,8 @@ def test_mock_enrich_words():
     assert "exhausted" in spellings
 
 
-def test_generate_from_spellings_endpoint(client, db_session, test_user, auth_headers):
+@patch("app.services.ai.get_groq_client", return_value=None)
+def test_generate_from_spellings_endpoint(mock_get_client, client, db_session, test_user, auth_headers):
     """Test the POST /vocab/lists/{list_id}/generate SSE endpoint."""
     vocab_list = VocabList(user_id=test_user.id, name="AI Generate Test", description="", target_language="Spanish")
     db_session.add(vocab_list)

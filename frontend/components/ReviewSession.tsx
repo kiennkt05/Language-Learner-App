@@ -180,6 +180,12 @@ export default function ReviewSession({
       });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          alert("Your session has expired. Please log in again to save your progress.");
+          localStorage.removeItem("vocab_token");
+          window.location.reload();
+          return;
+        }
         console.error("Failed to submit review log to backend.");
       }
     } catch (err) {

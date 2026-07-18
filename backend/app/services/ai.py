@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Dict, Any, List, Optional
 
 from groq import Groq
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.config import settings
 from app.db.exercise_schemas import (
@@ -86,35 +87,38 @@ def generate_exercise_for_word(
         )
         json_schema = schema.model_json_schema()
 
-        completion = client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an expert language teacher generating structured JSON exercises for students. "
-                        "Always return a single JSON object that strictly conforms to the provided schema. "
-                        "Do NOT include any text outside the JSON object."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"{prompt}\n\n"
-                        f"Return your answer as a JSON object conforming to this schema:\n"
-                        f"```json\n{json.dumps(json_schema, indent=2)}\n```"
-                    ),
-                },
-            ],
-            temperature=1,
-            max_completion_tokens=8192,
-            top_p=1,
-            reasoning_effort="medium",
-            stream=False,
-            stop=None,
-            response_format={"type": "json_object"},
-        )
+        @retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3), reraise=True)
+        def _call_api():
+            return client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an expert language teacher generating structured JSON exercises for students. "
+                            "Always return a single JSON object that strictly conforms to the provided schema. "
+                            "Do NOT include any text outside the JSON object."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{prompt}\n\n"
+                            f"Return your answer as a JSON object conforming to this schema:\n"
+                            f"```json\n{json.dumps(json_schema, indent=2)}\n```"
+                        ),
+                    },
+                ],
+                temperature=1,
+                max_completion_tokens=2048,
+                top_p=1,
+                reasoning_effort="medium",
+                stream=False,
+                stop=None,
+                response_format={"type": "json_object"},
+            )
 
+        completion = _call_api()
         raw_text = completion.choices[0].message.content
         parsed = json.loads(raw_text)
 
@@ -123,13 +127,8 @@ def generate_exercise_for_word(
         return validated.model_dump()
 
     except Exception as e:
-        print(f"Error during Groq generation ({exercise_type}): {e}. Falling back to mock.")
-        return _generate_mock_exercise(
-            spelling, translation, exercise_type,
-            other_translations, other_words,
-            definition=definition, collocation=collocation,
-            part_of_speech=part_of_speech,
-        )
+        print(f"Error during Groq generation ({exercise_type}): {e}.")
+        raise
 
 
 # ─── Prompt builders ──────────────────────────────────────────────────
@@ -269,12 +268,12 @@ def _generate_mock_exercise(
 
         if len(valid_others) < 3:
             mock_pairs = [
-                {"spelling": "perro", "translation": "dog"},
-                {"spelling": "gato", "translation": "cat"},
-                {"spelling": "casa", "translation": "house"},
-                {"spelling": "libro", "translation": "book"},
-                {"spelling": "agua", "translation": "water"},
-                {"spelling": "manzana", "translation": "apple"},
+                {"spelling": "WordA", "translation": "TranslationA"},
+                {"spelling": "WordB", "translation": "TranslationB"},
+                {"spelling": "WordC", "translation": "TranslationC"},
+                {"spelling": "WordD", "translation": "TranslationD"},
+                {"spelling": "WordE", "translation": "TranslationE"},
+                {"spelling": "WordF", "translation": "TranslationF"},
             ]
             for mp in mock_pairs:
                 if (mp["spelling"].lower() != spelling.lower()
@@ -290,9 +289,9 @@ def _generate_mock_exercise(
     # ── Fill Blank ──
     elif exercise_type == "fill_blank":
         return {
-            "sentence_with_blank": f"Complete the sentence: 'El ___ corre.'",
+            "sentence_with_blank": f"Please provide the word for: ___",
             "blank_value": spelling,
-            "context_clue": f"The {translation} runs.",
+            "context_clue": f"Hint: {translation}",
         }
 
     # ── Sentence Writing ──
@@ -315,9 +314,9 @@ def _generate_mock_exercise(
                 else:
                     category_b_words.append(w["spelling"])
         if len(category_a_words) < 2:
-            category_a_words.append("perro")
+            category_a_words.append("WordA")
         if len(category_b_words) < 2:
-            category_b_words.extend(["rojo", "azul"][:2 - len(category_b_words)])
+            category_b_words.extend(["WordB", "WordC"][:2 - len(category_b_words)])
 
         return {
             "instruction": "Sort these words into the correct categories.",
@@ -334,9 +333,9 @@ def _generate_mock_exercise(
             same_group = random.sample(other_words, min(2, len(other_words)))
             group_words.extend([w["spelling"] for w in same_group])
         while len(group_words) < 3:
-            group_words.append("libro")
+            group_words.append("WordD")
 
-        odd = "sol"  # The outlier
+        odd = "WordE"  # The outlier
         all_words = group_words[:3] + [odd]
         random.shuffle(all_words)
         return {
@@ -410,30 +409,33 @@ def enrich_words_from_spellings(
 
         prompt = _build_enrichment_prompt(spellings, target_language, source_language)
 
-        completion = client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a language teacher. Return ONLY a JSON object "
-                        "{\"words\": [...]} with no other text."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            temperature=1,
-            max_completion_tokens=4096,
-            top_p=1,
-            reasoning_effort="medium",
-            stream=False,
-            stop=None,
-            response_format={"type": "json_object"},
-        )
+        @retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3), reraise=True)
+        def _call_api():
+            return client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a language teacher. Return ONLY a JSON object "
+                            "{\"words\": [...]} with no other text."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    },
+                ],
+                temperature=1,
+                max_completion_tokens=2048,
+                top_p=1,
+                reasoning_effort="medium",
+                stream=False,
+                stop=None,
+                response_format={"type": "json_object"},
+            )
 
+        completion = _call_api()
         raw_text = completion.choices[0].message.content
         parsed = json.loads(raw_text)
 
@@ -451,8 +453,8 @@ def enrich_words_from_spellings(
         return results
 
     except Exception as e:
-        print(f"Error during Groq enrichment: {e}. Falling back to mock.")
-        return _mock_enrich_words(spellings, target_language, source_language)
+        print(f"Error during Groq enrichment: {e}.")
+        raise
 
 
 def _build_enrichment_prompt(

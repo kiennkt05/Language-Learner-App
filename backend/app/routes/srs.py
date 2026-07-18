@@ -85,24 +85,25 @@ def get_srs_session(
             try:
                 from app.services.ai import BALANCED_SET
 
-                # Delete any stale exercises
-                db.query(Exercise).filter(Exercise.word_id == card.word_id).delete()
+                with db.begin_nested():
+                    # Delete any stale exercises
+                    db.query(Exercise).filter(Exercise.word_id == card.word_id).delete()
 
-                # Generate balanced 5-exercise set
-                for ex_type in BALANCED_SET:
-                    ex_data = generate_exercise_for_word(
-                        card.word.spelling, card.word.translation, ex_type,
-                        other_translations=other_translations,
-                        other_words=other_words,
-                        definition=card.word.definition,
-                        collocation=card.word.collocation,
-                        part_of_speech=card.word.part_of_speech,
-                    )
-                    db.add(Exercise(word_id=card.word_id, type=ex_type, data=ex_data))
+                    # Generate balanced exercise set
+                    for ex_type in BALANCED_SET:
+                        ex_data = generate_exercise_for_word(
+                            card.word.spelling, card.word.translation, ex_type,
+                            other_translations=other_translations,
+                            other_words=other_words,
+                            definition=card.word.definition,
+                            collocation=card.word.collocation,
+                            part_of_speech=card.word.part_of_speech,
+                        )
+                        db.add(Exercise(word_id=card.word_id, type=ex_type, data=ex_data))
 
                 db.commit()
             except Exception as e:
-                db.rollback()
+                # Nested transaction is rolled back, session remains valid
                 print(f"Failed to auto generate exercises in session: {e}")
                 
             # Fetch again after commit

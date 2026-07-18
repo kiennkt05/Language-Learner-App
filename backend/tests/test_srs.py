@@ -88,7 +88,10 @@ def test_srs_session_queue(client, db_session, test_user, auth_headers):
     assert len(due_in_session) == 40
     assert len(new_in_session) == 10
 
-def test_srs_session_filtering_and_exercise_generation(client, db_session, test_user, auth_headers):
+from unittest.mock import patch
+
+@patch("app.services.ai.get_groq_client", return_value=None)
+def test_srs_session_filtering_and_exercise_generation(mock_get_client, client, db_session, test_user, auth_headers):
     # List A
     list_a = VocabList(user_id=test_user.id, name="List A")
     db_session.add(list_a)
@@ -111,7 +114,7 @@ def test_srs_session_filtering_and_exercise_generation(client, db_session, test_
     assert data[0]["spelling"] == "worda"
     
     # Verify exercises are generated and response includes exercises
-    assert len(data[0]["exercises"]) == 5  # Balanced set: match, fill_blank, mcq, sentence_writing, odd_one_out
+    assert len(data[0]["exercises"]) == 4  # Balanced set: match, fill_blank, mcq, odd_one_out
     types = {ex["type"] for ex in data[0]["exercises"]}
     assert "mcq" in types
     assert "fill_blank" in types
