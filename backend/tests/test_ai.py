@@ -82,7 +82,7 @@ def test_mock_exercise_generators_new_types():
 def test_exercise_types_constants():
     """Validate the EXERCISE_TYPES and BALANCED_SET constants."""
     assert len(EXERCISE_TYPES) == 9
-    assert len(BALANCED_SET) == 5
+    assert len(BALANCED_SET) == 4
     for ex_type in BALANCED_SET:
         assert ex_type in EXERCISE_TYPES
 
@@ -106,23 +106,22 @@ def test_generate_and_fetch_exercises_endpoint(client, db_session, test_user, au
     vocab_list.words.append(word)
     db_session.commit()
 
-    # Generate exercises — now produces 5 balanced exercises
+    # Generate exercises — now produces 4 balanced exercises
     response = client.post(f"/vocab/words/{word.id}/exercises", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 5  # Balanced set: match, fill_blank, mcq, sentence_writing, odd_one_out
+    assert len(data) == 4  # Balanced set: match, fill_blank, mcq, odd_one_out
     types = {ex["type"] for ex in data}
     assert "mcq" in types
     assert "fill_blank" in types
     assert "match" in types
-    assert "sentence_writing" in types
     assert "odd_one_out" in types
 
     # Retrieve existing exercises
     fetch_res = client.get(f"/vocab/words/{word.id}/exercises", headers=auth_headers)
     assert fetch_res.status_code == 200
     fetch_data = fetch_res.json()
-    assert len(fetch_data) == 5
+    assert len(fetch_data) == 4
 
 
 def test_explain_word_sse_stream_endpoint(client, db_session, test_user, auth_headers):
@@ -213,4 +212,4 @@ def test_generate_from_spellings_endpoint(client, db_session, test_user, auth_he
 
     # Verify exercises were generated
     exercises = db_session.query(Exercise).all()
-    assert len(exercises) >= 10  # 2 words × 5 exercises each
+    assert len(exercises) >= 8  # 2 words × 4 exercises each

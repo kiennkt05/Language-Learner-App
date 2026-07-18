@@ -23,6 +23,11 @@ interface Card {
   exercises: Exercise[];
 }
 
+interface QueueItem {
+  card: Card;
+  exercise: Exercise;
+}
+
 interface ReviewSessionProps {
   listId: string | null;
   listName: string;
@@ -42,12 +47,12 @@ export default function ReviewSession({
 }: ReviewSessionProps) {
   const [loading, setLoading] = useState(true);
   const [cards, setCards] = useState<Card[]>([]);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [error, setError] = useState("");
   const [resetting, setResetting] = useState(false);
 
   // Active Session State
-  const [currentCardIdx, setCurrentCardIdx] = useState(0);
-  const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
+  const [currentIdx, setCurrentIdx] = useState(0);
   const [exerciseSubmitted, setExerciseSubmitted] = useState(false);
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [sessionCompleted, setSessionCompleted] = useState(false);
@@ -78,6 +83,28 @@ export default function ReviewSession({
       
       const data = await res.json();
       setCards(data);
+
+      // Flatten all exercises into a single queue
+      const newQueue: QueueItem[] = [];
+      data.forEach((card: Card) => {
+        if (card.exercises) {
+          card.exercises.forEach((ex) => {
+            newQueue.push({ card, exercise: ex });
+          });
+        }
+      });
+
+      // Fisher-Yates shuffle the queue to mix questions from all cards
+      for (let i = newQueue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newQueue[i], newQueue[j]] = [newQueue[j], newQueue[i]];
+      }
+
+      setQueue(newQueue);
+      setCurrentIdx(0);
+      setSessionCompleted(false);
+      setAnswersLog([]);
+      setExerciseSubmitted(false);
     } catch (err: any) {
       setError(err.message || "Something went wrong.");
     } finally {
@@ -119,9 +146,9 @@ export default function ReviewSession({
   const handleExerciseSubmit = async (isCorrect: boolean, quality: number, response: string) => {
     if (submittingAnswer) return;
 
-    const currentCard = cards[currentCardIdx];
-    const exercises = currentCard.exercises;
-    const currentExercise = exercises[currentExerciseIdx];
+    const currentItem = queue[currentIdx];
+    const currentCard = currentItem.card;
+    const currentExercise = currentItem.exercise;
 
     setSubmittingAnswer(true);
     setExerciseSubmitted(true);
@@ -163,30 +190,16 @@ export default function ReviewSession({
   };
 
   const handleNext = () => {
-    const currentCard = cards[currentCardIdx];
-    const exercises = currentCard.exercises;
-
-    // Check if there are more exercises on the current card
-    if (currentExerciseIdx < exercises.length - 1) {
-      setCurrentExerciseIdx((prev) => prev + 1);
+    if (currentIdx < queue.length - 1) {
+      setCurrentIdx((prev) => prev + 1);
       setExerciseSubmitted(false);
     } else {
-      // Move to next card
-      if (currentCardIdx < cards.length - 1) {
-        setCurrentCardIdx((prev) => prev + 1);
-        setCurrentExerciseIdx(0);
-        setExerciseSubmitted(false);
-      } else {
-        // Session finished
-        setSessionCompleted(true);
-      }
+      setSessionCompleted(true);
     }
   };
 
-
-
   // Calculate global progress stats
-  const totalExercises = cards.reduce((acc, c) => acc + (c.exercises?.length || 0), 0);
+  const totalExercises = queue.length;
   const completedExercises = answersLog.length;
   const progressPercent = totalExercises > 0 ? (completedExercises / totalExercises) * 100 : 0;
   
@@ -229,7 +242,7 @@ export default function ReviewSession({
   }
 
   // Handle empty queue (All cards reviewed)
-  if (cards.length === 0) {
+  if (cards.length === 0 || queue.length === 0) {
     return (
       <div className="fixed inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-6 text-slate-100">
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
@@ -362,9 +375,9 @@ export default function ReviewSession({
   }
 
   // Active review session UI
-  const currentCard = cards[currentCardIdx];
-  const exercises = currentCard.exercises;
-  const currentExercise = exercises && exercises[currentExerciseIdx];
+  const currentItem = queue[currentIdx];
+  const currentCard = currentItem.card;
+  const currentExercise = currentItem.exercise;
 
   return (
     <div className="fixed inset-0 bg-slate-950 z-50 overflow-y-auto flex flex-col p-4 md:p-8 text-slate-100">
@@ -396,8 +409,8 @@ export default function ReviewSession({
         {/* Progress Bar */}
         <div className="my-6 shrink-0 space-y-2">
           <div className="flex justify-between text-xs text-slate-400 px-1 font-semibold">
-            <span>Card {currentCardIdx + 1} of {cards.length}</span>
             <span>Question {completedExercises + 1} of {totalExercises}</span>
+            <span>Accuracy {accuracy}%</span>
           </div>
           <div className="w-full bg-slate-900 border border-slate-850 h-2.5 rounded-full overflow-hidden p-[2px]">
             <div
@@ -422,26 +435,11 @@ export default function ReviewSession({
 
         {/* Active Exercise Component */}
         <div className="flex-1 flex flex-col justify-center py-4">
-          {currentExercise ? (
-            <ExerciseCard
-              key={`${currentCard.card_id}-${currentExercise.id}`}
-              exercise={currentExercise}
-              onSubmit={handleExerciseSubmit}
-            />
-          ) : (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center space-y-4">
-              <AlertCircle className="w-10 h-10 text-amber-500 mx-auto" />
-              <p className="text-xs text-slate-400">
-                No interactive exercises found for card `{currentCard.spelling}`.
-              </p>
-              <button
-                onClick={handleNext}
-                className="px-4 py-2 bg-indigo-600 rounded-xl text-xs font-semibold"
-              >
-                Skip Card
-              </button>
-            </div>
-          )}
+          <ExerciseCard
+            key={`${currentCard.card_id}-${currentExercise.id}`}
+            exercise={currentExercise}
+            onSubmit={handleExerciseSubmit}
+          />
         </div>
 
         {/* Action Button */}
@@ -451,7 +449,7 @@ export default function ReviewSession({
               onClick={handleNext}
               className="flex items-center gap-1.5 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition cursor-pointer"
             >
-              {currentCardIdx === cards.length - 1 && currentExerciseIdx === exercises.length - 1
+              {currentIdx === queue.length - 1
                 ? "Finish Session"
                 : "Next Question"}
               <ArrowRight className="w-3.5 h-3.5" />

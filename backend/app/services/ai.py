@@ -32,8 +32,8 @@ SCHEMA_MAP = {
     "flashcard": FlashcardExercise,
 }
 
-# The balanced 5-exercise homework package order
-BALANCED_SET = ["match", "fill_blank", "mcq", "sentence_writing", "odd_one_out"]
+# The balanced 4-exercise homework package order
+BALANCED_SET = ["match", "fill_blank", "mcq", "odd_one_out"]
 
 
 @lru_cache(maxsize=1)
